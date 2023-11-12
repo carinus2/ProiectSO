@@ -1,4 +1,4 @@
-nume fisier: imagine.bmp
+nume fisier: director/imagine.bmp
 inaltime: 1280
 lungime: 1920
 dimensiune: 7372938 octeti
@@ -8,3 +8,9 @@ contorul de legaturi: 1
 drepturi de acces user: RW-
 drepturi de acces grup: R--
 drepturi de acces altii: R--
+nume director: director/subdirector
+identificatorul utilizatorului: 501
+drepturi de acces: RWXR-X
+nume fisier: director/fisier1.txt
+dimensiune: 6 octeti
+identificatorul utilizatorului: 501

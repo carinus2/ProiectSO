@@ -81,10 +81,17 @@ int open_file(const char *path){
     return fileDescriptor;
 }
 
-void write_to_statistica(const char *filename, BMPFILE *bmpFile, struct stat *fileInfo) {
+int has_extension(const char *filename, const char *extension) {
+    const char *dot = strrchr(filename, '.');
+    if (!dot || dot == filename) return 0;
+    return strcmp(dot, extension) == 0;
+}
+
+
+void write_to_statistics_for_bmpFile(const char *filename, BMPFILE *bmpFile, struct stat *fileInfo) {
     int statsFile = open("statistica.txt", O_WRONLY | O_CREAT, 0644);//il deschidem, daca nu e il cream si il facem doar pentru write
     if (statsFile == -1) {
-        perror("Error opening statistica.txt");
+        perror("Eroare la deschiderea fisierului statistica.txt");
         return;
     }
 
@@ -138,38 +145,113 @@ void write_to_statistica(const char *filename, BMPFILE *bmpFile, struct stat *fi
 }
 
 
+void process_entry(const char *path) {
+    struct stat entryInfo;
+    if (lstat(path, &entryInfo) != 0) {
+        perror("Error getting entry info");
+        return;
+    }
+
+    int statsFile = open("statistica.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (statsFile == -1) {
+        perror("Error opening statistica.txt");
+        return;
+    }
+
+    char buffer[1024];
+    int length;
+
+    if (S_ISREG(entryInfo.st_mode)) {
+        if (has_extension(path, ".bmp")) {
+            int file = open_file(path);
+            if (file != -1) {
+                BMPFILE bmpFile;
+                read_from_bmpFile(file, &bmpFile);
+                write_to_statistics_for_bmpFile(path, &bmpFile, &entryInfo);
+                close(file);
+            }
+        } else {
+            length = sprintf(buffer, "nume fisier: %s\ndimensiune: %lld octeti\nidentificatorul utilizatorului: %d\n",
+                             path, (long long)entryInfo.st_size, entryInfo.st_uid);
+            write(statsFile, buffer, length);
+        }
+    } else if (S_ISDIR(entryInfo.st_mode)) {
+        char rightsBuffer[10];
+        sprintf(rightsBuffer, "%c%c%c%c%c%c",
+                (entryInfo.st_mode & S_IRUSR) ? 'R' : '-', 
+                (entryInfo.st_mode & S_IWUSR) ? 'W' : '-',
+                (entryInfo.st_mode & S_IXUSR) ? 'X' : '-',
+                (entryInfo.st_mode & S_IRGRP) ? 'R' : '-', 
+                (entryInfo.st_mode & S_IWGRP) ? 'W' : '-',
+                (entryInfo.st_mode & S_IXGRP) ? 'X' : '-');
+
+        length = sprintf(buffer, "nume director: %s\nidentificatorul utilizatorului: %d\ndrepturi de acces: %s\n",
+                         path, entryInfo.st_uid, rightsBuffer);
+        write(statsFile, buffer, length);
+    } else if (S_ISLNK(entryInfo.st_mode)) {
+        struct stat targetInfo;
+        if (stat(path, &targetInfo) == 0 && S_ISREG(targetInfo.st_mode)) {
+            length = sprintf(buffer, "nume legatura: %s\ndimensiune: %lld octeti\ndimensiune fisier: %lld octeti\n",
+                             path, (long long)entryInfo.st_size, (long long)targetInfo.st_size);
+            write(statsFile, buffer, length);
+        }
+    }
+
+    close(statsFile);
+}
+
+
+void traverse_directory(const char *path) {
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        perror("Eroare la deschiderea directorului");
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip "." and ".." entries to avoid infinite recursion
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char fullPath[1024];
+        snprintf(fullPath, sizeof(fullPath), "%s/%s", path, entry->d_name);
+
+        process_entry(fullPath);
+
+        // Recursively call traverse_directory if entry is a directory
+        struct stat entryInfo;
+        if (lstat(fullPath, &entryInfo) != 0) {
+            perror("Eroare la obtinerea informatiilor despre intrare");
+            continue;
+        }
+
+        if (S_ISDIR(entryInfo.st_mode)) {
+            traverse_directory(fullPath);
+        }
+    }
+
+    closedir(dir);
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         printf("Numar incorect de argumente\n");
         return 1;
     }
 
-    if (is_director(argv[1])) {
-        if (open_director(argv[1])) {
-            printf("%s este un director și conține fișiere sau directoare.\n", argv[1]);
-        } else {
-            printf("%s nu se pot citi intrările din director sau este gol.\n", argv[1]);
-        }
-        return 0;
-    }
-
-    int file = open_file(argv[1]);
-    if (file == -1) {
+    struct stat pathInfo;
+    if (lstat(argv[1], &pathInfo) != 0) {
+        perror("Eroare la obtinerea informatiilor despre cale");
         return 1;
     }
 
-    BMPFILE bmpFile;
-    read_from_bmpFile(file, &bmpFile);
-
-    struct stat fileInfo;
-    if (stat(argv[1], &fileInfo) != 0) {
-        perror("eroare la primirea informatiilor despre fisier");
-        return 1;
+    if (S_ISDIR(pathInfo.st_mode)) {
+        traverse_directory(argv[1]);
+    } else {
+        process_entry(argv[1]);
     }
-
-    write_to_statistica(argv[1], &bmpFile, &fileInfo);
-
-    close(file); 
 
     return 0;
 }
