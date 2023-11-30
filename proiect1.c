@@ -210,7 +210,6 @@ void traverse_directory(const char *path) {
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Skip "." and ".." entries to avoid infinite recursion
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
