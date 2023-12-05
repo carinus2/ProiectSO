@@ -51,7 +51,26 @@ typedef struct {
 } BMPFILE;
 
 
+void execute_shell_script(const char *script_path, const char *data) {
+    int pipefd[2];
+    pipe(pipefd);
 
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(pipefd[1]); 
+        dup2(pipefd[0], STDIN_FILENO); 
+        execlp("bash", "bash", script_path, NULL);
+        perror("execlp");
+        exit(EXIT_FAILURE);
+    } else if (pid > 0) {
+        close(pipefd[0]);
+        write(pipefd[1], data, strlen(data));
+        close(pipefd[1]);
+        waitpid(pid, NULL, 0);
+    } else {
+        perror("fork");
+    }
+}
 
 
 void read_from_bmpFile(int fd, BMPFILE *file){
@@ -271,18 +290,18 @@ void process_entry(const char *input_path, const char *output_dir,int *pfd) {
      
          ChildProcessData data;
         data.pid = getpid();
-        data.exitCode = 0; // Presupunem că totul a mers bine
+        data.exitCode = 0;
         data.lineCount = line_count;
-        close(pfd[0]); // Închide capătul de citire în procesul copil
+        close(pfd[0]); 
         write(pfd[1], &data, sizeof(data));
-        close(pfd[1]); // Închide capătul de scriere după trimitere
+        close(pfd[1]); 
 
         exit(0);
     } else if (pid > 0) {
          ChildProcessData data;
-        close(pfd[1]); // Închide capătul de scriere în procesul părinte
+        close(pfd[1]); 
         read(pfd[0], &data, sizeof(data));
-        close(pfd[0]); // Închide capătul de citire
+        close(pfd[0]); 
 
         int status;
         waitpid(pid, &status, 0);
@@ -290,7 +309,6 @@ void process_entry(const char *input_path, const char *output_dir,int *pfd) {
             data.exitCode = WEXITSTATUS(status);
             printf("S-a încheiat procesul cu pid-ul %d și codul %d\n", data.pid, data.exitCode);
 
-            // Scrie datele în statistica.txt
             char statsPath[1024];
             snprintf(statsPath, sizeof(statsPath), "%s/statistica.txt", output_dir);
             int statsFile = open(statsPath, O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -316,7 +334,7 @@ void traverse_directory(const char *input_dir, const char *output_dir) {
 
     struct dirent *entry;
     int num_children = 0;
-    int pfd[2 * BUFSIZ]; // O dimensiune suficientă pentru a gestiona mai multe pipe-uri
+    int pfd[2 * BUFSIZ]; 
 
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
@@ -332,7 +350,7 @@ void traverse_directory(const char *input_dir, const char *output_dir) {
         }
 
         process_entry(fullPath, output_dir, pfd + num_children * 2);
-        close(pfd[num_children * 2 + 1]); // Închide capătul de scriere în procesul părinte
+        close(pfd[num_children * 2 + 1]); 
         num_children++;
     }
 
@@ -342,7 +360,7 @@ void traverse_directory(const char *input_dir, const char *output_dir) {
     pid_t pid = wait(&status);
     if (pid > 0 && WIFEXITED(status)) {
         read(pfd[i * 2], &info, sizeof(info));
-        close(pfd[i * 2]); // Închide capătul de citire
+        close(pfd[i * 2]); 
 
         char statsPath[1024];
         snprintf(statsPath, sizeof(statsPath), "%s/statistica.txt", output_dir);
@@ -390,6 +408,9 @@ int main(int argc, char *argv[]) {
         close(pfd[1]); 
         close(pfd[0]); 
     }
+
+    char *data_to_send = "a\nThis is a test sentence. Another one? Yes!";
+    execute_shell_script("./script.sh", data_to_send);
 
     return 0;
 }
