@@ -1,3 +1,3 @@
-nume fisier: director_intrare/fisier1.txt
+nume fisier: director_intrare//fisier1.txt
 dimensiune: 6 octeti
 identificatorul utilizatorului: 501

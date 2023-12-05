@@ -1,3 +1,6 @@
 Procesul cu pid-ul 63679 s-a incheiat cu codul 0 si a scris 10 linii
 Procesul cu pid-ul 63683 s-a incheiat cu codul 0 si a scris 3 linii
 Procesul cu pid-ul 63684 s-a incheiat cu codul 0 si a scris 3 linii
+Procesul cu pid-ul 79203 s-a incheiat cu codul 0 si a scris 10 linii
+Procesul cu pid-ul 79210 s-a incheiat cu codul 0 si a scris 3 linii
+Procesul cu pid-ul 79211 s-a incheiat cu codul 0 si a scris 3 linii
