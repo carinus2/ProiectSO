@@ -72,7 +72,6 @@ void execute_shell_script(const char *script_path, const char *data) {
     }
 }
 
-
 void read_from_bmpFile(int fd, BMPFILE *file){
     lseek(fd, 0, SEEK_SET); 
     read(fd, &(file->signature), 2);
@@ -124,6 +123,28 @@ int has_extension(const char *filename, const char *extension) {
     const char *dot = strrchr(filename, '.');
     if (!dot || dot == filename) return 0;
     return strcmp(dot, extension) == 0;
+}
+
+
+pid_t execute_script_with_content(const char *script_path, const char *data, char c) {
+    int pipefd[2];
+    pipe(pipefd);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(pipefd[1]); 
+        dup2(pipefd[0], STDIN_FILENO);
+
+        char c_str[2] = {c, '\0'};
+        execlp("bash", "bash", script_path, c_str, NULL);
+        perror("execlp");
+        exit(EXIT_FAILURE);
+    } else {
+        close(pipefd[0]);
+        write(pipefd[1], data, strlen(data));
+        close(pipefd[1]);
+    }
+    return pid; 
 }
 
 
@@ -209,7 +230,7 @@ void convert_to_grayscale(const char *file_path) {
     close(fd);
 }
 
-void process_entry(const char *input_path, const char *output_dir,int *pfd) {
+void process_entry(const char *input_path, const char *output_dir,int *pfd,char caracter,int *num_children) {
     int line_count=0;
     struct stat entryInfo;
     if (lstat(input_path, &entryInfo) != 0) {
@@ -231,33 +252,71 @@ void process_entry(const char *input_path, const char *output_dir,int *pfd) {
         char buffer[1024];
         int length;
         
-        if (S_ISREG(entryInfo.st_mode) ) {
-            if (has_extension(input_path, ".bmp")) {
-                int file = open_file(input_path);
-                if (file != -1) {
-                    BMPFILE bmpFile;
-                    read_from_bmpFile(file, &bmpFile);
-                    line_count = 0;
-                    write_to_statistics_for_bmpFile(output_path, input_path, &bmpFile, &entryInfo, &line_count);
-                    close(file);
-
-                    pid_t pid_gray = fork();
-                    if (pid_gray == 0) {
-                        convert_to_grayscale(input_path);
-                        exit(0);
-                    } else if (pid_gray > 0) {
-                        int status_gray;
-                        waitpid(pid_gray, &status_gray, 0);
-                    } else {
-                        perror("Fork nu a reusit pentru conversia în tonuri de gri");
-                    }
-                    
-                }
-            } else {
-                length = sprintf(buffer, "nume fisier: %s\ndimensiune: %lld octeti\nidentificatorul utilizatorului: %d\n",
+          if (S_ISREG(entryInfo.st_mode) && !has_extension(input_path, ".bmp")) {
+            int file = open_file(input_path);
+            if (file != -1) {
+                char file_content[BUFSIZ];
+                ssize_t read_bytes = read(file, file_content, sizeof(file_content) - 1);
+                if (read_bytes > 0) {
+                    file_content[read_bytes] = '\0';
+                    execute_script_with_content("script.sh", file_content, caracter);
+                    length = sprintf(buffer, "nume fisier: %s\ndimensiune: %lld octeti\nidentificatorul utilizatorului: %d\n",
                                  input_path, (long long)entryInfo.st_size, entryInfo.st_uid);
                                   line_count = 3;
                 write(statsFile, buffer, length);
+                }
+                close(file);
+            
+
+            } else {
+                
+                    char file_content[BUFSIZ];
+                    if (file != -1) {
+                        ssize_t read_bytes = read(file, file_content, sizeof(file_content) - 1);
+                        if (read_bytes > 0) {
+                            file_content[read_bytes] = '\0';
+                            printf("Conținutul citit: %s\n", file_content); 
+                            execute_script_with_content("script.sh", file_content, caracter);
+                        }
+                        close(file);
+                        }
+
+        
+                pid_t pid_script = fork();
+                if (pid_script == 0) { 
+                    int pipe_script[2];
+                    if (pipe(pipe_script) == -1) {
+                        perror("Pipe failed");
+                        exit(1);
+                    }
+                    write(pipe_script[1], file_content, strlen(file_content));
+                    close(pipe_script[1]); 
+
+                 
+                    dup2(pipe_script[0], STDIN_FILENO);
+                    char character_str[2] = {caracter, '\0'};
+                    execlp("bash", "bash", "./script.sh", character_str, NULL);
+                    perror("execlp failed");
+                    exit(EXIT_FAILURE);
+                } else if (pid_script > 0) {
+                    int status_script;
+                    waitpid(pid_script, &status_script, 0);
+                    if (WIFEXITED(status_script)) {
+                        int count = WEXITSTATUS(status_script);
+                        printf("nr de propozitii corecte pentru fisierul '%s': este %d\n", input_path, count);
+                    }
+                } else {
+                    perror("Fork failed");
+                }
+                close(file);
+            }
+        } else if (S_ISREG(entryInfo.st_mode) && has_extension(input_path, ".bmp")) { {
+                BMPFILE bmpFile;
+                int file = open_file(input_path);
+                read_from_bmpFile(file, &bmpFile);
+                line_count = 0;
+                write_to_statistics_for_bmpFile(output_path, input_path, &bmpFile, &entryInfo, &line_count);
+                close(file);
             }
         } else if (S_ISDIR(entryInfo.st_mode)) {
             char rightsBuffer[10];
@@ -325,7 +384,7 @@ void process_entry(const char *input_path, const char *output_dir,int *pfd) {
     }
 }
 
-void traverse_directory(const char *input_dir, const char *output_dir) {
+void traverse_directory(const char *input_dir, const char *output_dir,char caracter) {
     DIR *dir = opendir(input_dir);
     if (dir == NULL) {
         perror("Eroare la deschiderea directorului");
@@ -349,7 +408,7 @@ void traverse_directory(const char *input_dir, const char *output_dir) {
             continue;
         }
 
-        process_entry(fullPath, output_dir, pfd + num_children * 2);
+        process_entry(fullPath, output_dir, pfd + num_children * 2,caracter,&num_children);
         close(pfd[num_children * 2 + 1]); 
         num_children++;
     }
@@ -380,12 +439,17 @@ void traverse_directory(const char *input_dir, const char *output_dir) {
 }
 }
 
-
-
-
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
+
+    int num_children = 0;
+    if (argc != 4) {
         printf("Numar incorect de argumente\n");
+        return 1;
+    }
+
+    char c = argv[3][0];
+    if (!isalnum(c)) {
+        printf("Caracterul trebuie sa fie alfanumeric\n");
         return 1;
     }
 
@@ -397,14 +461,14 @@ int main(int argc, char *argv[]) {
     mkdir(argv[2], 0777);
 
     if (S_ISDIR(pathInfo.st_mode)) {
-        traverse_directory(argv[1], argv[2]);
+        traverse_directory(argv[1], argv[2],c);
     } else {
         int pfd[2]; 
         if (pipe(pfd) == -1) {
             perror("Eroare la crearea pipe-ului");
             return 1;
         }
-        process_entry(argv[1], argv[2], pfd);
+        process_entry(argv[1], argv[2], pfd,c,&num_children);
         close(pfd[1]); 
         close(pfd[0]); 
     }

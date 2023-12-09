@@ -9,10 +9,13 @@ caracter=$1
 contor=0
 
 while read -r line; do
-    if [[ $line =~ ^[A-Z] && $line =~ [?.!]$ ]]; then
-        if ! [[ $line =~ ,\ si\  || $line =~ \ si,\  ]]; then
-            if [[ $line == *"$caracter"* ]]; then
-                ((contor++))
+    echo "Procesare linie: '$line'"
+    if [[ $line =~ ^[A-Z] ]]; then
+        if [[ $line =~ [?.!]$ ]]; then
+            if ! [[ $line =~ ,\ si\  || $line =~ \ si,\  ]]; then
+                if [[ $line == *"$caracter"* ]]; then
+                    ((contor++))
+                fi
             fi
         fi
     fi
